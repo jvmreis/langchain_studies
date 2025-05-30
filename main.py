@@ -11,6 +11,11 @@ from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_qdrant import QdrantVectorStore
 
+from langchain_core.output_parsers import BaseOutputParser
+from langchain_core.prompts import PromptTemplate
+from langchain.retrievers.multi_query import MultiQueryRetriever
+
+
 # -----------------------
 # Configurações iniciais
 # -----------------------
@@ -36,19 +41,17 @@ llm = ChatOpenAI(
 # -------------------------------
 embeddings_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
 
-# Função: Divide o documento em partes menores (chunks) de tamanho 1000 caracteres
+
+# Função: Divide o documento em partes menores (chunks)
 def divide_texto(lista_documento_entrada):
     print(f">>> REALIZANDO A DIVISAO DO TEXTO ORIGINAL EM CHUNKS")
     text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
     documents = text_splitter.split_documents(lista_documento_entrada)
-    i = 0
-    for pedaco in documents:
+    for i, pedaco in enumerate(documents):
         print("--" * 30)
         print(f"Chunk: {i}")
-        print("--" * 30)
         print(pedaco)
         print("--" * 30)
-        i += 1
     return documents
 
 
@@ -65,12 +68,10 @@ def cria_banco_vetorial_e_indexa_documentos(documentos):
     )
 
 
-# Função para carregar o texto de um arquivo e retornar como lista de documentos
+# Função para carregar um PDF e retornar como lista de documentos
 def ler_txt_e_retorna_texto_em_document():
-    print(f">>> REALIZANDO A LEITURA DO TXT EXEMPLO")
-    lista_documentos = TextLoader('exemplo_texto.txt', encoding='utf-8').load()
+    print(f">>> REALIZANDO A LEITURA DO PDF EXEMPLO")
     lista_documentos = PyPDFLoader('FAQ_BOOKING_COM.pdf').load()
-
     print("Texto lido e convertido em Document")
     print(lista_documentos)
     print("-----------------------------------")
@@ -100,25 +101,50 @@ def menu():
         if opcao == 'q':
             print("Saindo do programa...")
             break
+
         elif opcao == '1':
-            # Processa a leitura, divisão e indexação do texto
             texto_completo_lido = ler_txt_e_retorna_texto_em_document()
             divide_texto_resultado = divide_texto(texto_completo_lido)
             cria_banco_vetorial_e_indexa_documentos(divide_texto_resultado)
             print("Indexação concluída!")
+
         elif opcao == '2':
-            # Apenas conecta ao banco existente
             print("Conectando ao banco vetorial existente...")
             db = conecta_banco_vetorial_pre_criado()
             print("Conexão estabelecida com sucesso!")
-            # Exemplo de consulta no banco:
-            query = input("Digite uma consulta para teste: ")
-            pedacos_retornados = db.similarity_search(query, k=2)
-            print(f"Total de pedaços retornados: {len(pedacos_retornados)}")
+
+            class LineListOutputParser(BaseOutputParser[List[str]]):
+                """Output parser for a list of lines."""
+                def parse(self, text: str) -> List[str]:
+                    lines = text.strip().split("\n")
+                    return list(filter(None, lines))  # Remove empty lines
+
+            output_parser = LineListOutputParser()
+
+            QUERY_PROMPT = PromptTemplate(
+                input_variables=["question"],
+                template="""Você é um assistente de modelo de linguagem de IA. Sua tarefa é gerar cinco \
+            diferentes versões da pergunta do usuário para recuperar documentos relevantes de um vetor \
+            banco de dados. Ao gerar múltiplas perspectivas sobre a pergunta do usuário, seu objetivo é ajudar\
+            o usuário a superar algumas das limitações da busca por similaridade baseada em distância.
+            Forneça essas perguntas alternativas separadas por novas linhas.
+            Pergunta original: {question}"""
+            )
+
+            db_retriever = db.as_retriever()
+            llm_chain = QUERY_PROMPT | llm | output_parser
+            retriever = MultiQueryRetriever(retriever=db_retriever, llm_chain=llm_chain, parser_key="lines")
+
+            query = "Quando eu chego na hospedagem preciso pagar algo?"
+            pedacos_retornados = retriever.invoke(query)
+
+            print(f"Total de pedaços retornados (documents): {len(pedacos_retornados)}\n")
+
             for i, pedaco in enumerate(pedacos_retornados):
-                print(f"------ chunk {i} -------")
+                print(f"------ (documents) chunk {i} -------")
                 print(pedaco.page_content)
-                print("--------------------")
+                print("-------------------------------------")
+
         else:
             print("Opção inválida. Tente novamente.")
 
