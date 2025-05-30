@@ -3,3 +3,6 @@ https://www.youtube.com/watch?v=K6hvmnAYRKk&ab_channel=TrickSumo
 
 langchain course
 https://www.youtube.com/watch?v=D3oQBfeB23U&list=PLZibr6lRx3W9KD-hTt2LyQOSLgsj5xWT1&index=2&ab_channel=GustavoSacchi
+
+Lanchain tutorial
+https://featherless.ai/blog/building-production-ready-llm-apps-with-langchain-featherless-serverless-inference

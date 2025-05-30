@@ -1,6 +1,7 @@
 from dotenv import load_dotenv
 import os
 from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
 load_dotenv()  # carrega as variáveis do .env
 
@@ -17,14 +18,21 @@ llm = ChatOpenAI(
 )
 
 messages = [
-    (
-        "system",
-        "You are a helpful assistant that translates English to French. Translate the user sentence.",
-    ),
-    (
-        "human",
-        "I love programming."
-    ),
+    SystemMessage(content="Você é um assistente útil que responde ao usuário com detalhes e exemplos.")
+
 ]
-ai_msg = llm.invoke(messages)
-print(ai_msg)
+while True:
+    entrada = input("Entrada Usuário (digite 'q' para parar.): ")
+    if entrada.lower() == "q":
+        break
+
+    messages.append(HumanMessage(content=entrada))
+
+    resultado = llm.invoke(messages)
+    resposta = resultado.content
+    messages.append(AIMessage(content=resposta))
+
+    print(f"Resposta IA: {resposta}")
+
+print("---- Histórico Completo ----")
+print(messages)
