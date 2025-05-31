@@ -5,7 +5,7 @@ from typing import List
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
-from langchain_text_splitters import CharacterTextSplitter
+from langchain_text_splitters import CharacterTextSplitter, RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -15,20 +15,19 @@ from langchain_core.output_parsers import BaseOutputParser
 from langchain_core.prompts import PromptTemplate
 from langchain.retrievers.multi_query import MultiQueryRetriever
 
-
 # -----------------------
-# Configurações iniciais
+# Initial configuration
 # -----------------------
 load_dotenv()
 
-api_key = os.getenv("OPENAI_API_KEY")  # Ainda usado para LLM se quiser
+api_key = os.getenv("OPENAI_API_KEY")
 debug = os.getenv("DEBUG")
 
-print(f"API Key: {api_key}")
-print(f"Debug mode: {debug}")
+# print(f"API Key: {api_key}")
+# print(f"Debug mode: {debug}")
 
 # -------------------------------
-# LLM Featherless (apenas para geração de texto, NÃO para embeddings)
+# Featherless LLM (used for generation, NOT for embeddings)
 # -------------------------------
 llm = ChatOpenAI(
     api_key=api_key,
@@ -37,29 +36,29 @@ llm = ChatOpenAI(
 )
 
 # -------------------------------
-# Embeddings locais com HuggingFace
+# Local embeddings using HuggingFace
 # -------------------------------
 embeddings_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
 
+# Splits the document into chunks
+def split_document_into_chunks(doc_list):
+    # print(">>> Splitting document into chunks...")
+    text_splitter = RecursiveCharacterTextSplitter(separators=[""], chunk_size=1000, chunk_overlap=200)
+    chunks = text_splitter.split_documents(doc_list)
 
-# Função: Divide o documento em partes menores (chunks)
-def divide_texto(lista_documento_entrada):
-    print(f">>> REALIZANDO A DIVISAO DO TEXTO ORIGINAL EM CHUNKS")
-    text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
-    documents = text_splitter.split_documents(lista_documento_entrada)
-    for i, pedaco in enumerate(documents):
-        print("--" * 30)
-        print(f"Chunk: {i}")
-        print(pedaco)
-        print("--" * 30)
-    return documents
+    # for i, chunk in enumerate(chunks):
+    #     print("--" * 30)
+    #     print(f"Chunk: {i}")
+    #     print(chunk)
+    #     print("--" * 30)
 
+    return chunks
 
-# Cria o banco de dados vetorial, gerando os embeddings dos documentos
-def cria_banco_vetorial_e_indexa_documentos(documentos):
-    print(f">>> REALIZANDO INDEXAÇÃO DOS CHUNKS NO BANCO VETORIAL")
+# Creates vector DB and indexes document chunks
+def create_and_index_vector_store(docs):
+    # print(">>> Indexing chunks in vector database...")
     QdrantVectorStore.from_documents(
-        documents=documentos,
+        documents=docs,
         embedding=embeddings_model,
         api_key=os.environ.get("QDRANT_API_KEY"),
         url=os.environ.get("QDRANT_URL"),
@@ -67,87 +66,88 @@ def cria_banco_vetorial_e_indexa_documentos(documentos):
         collection_name="pdf_file"
     )
 
+# Loads a sample PDF and returns its content as documents
+def load_pdf_as_documents():
+    # print(">>> Loading sample PDF file...")
+    docs = PyPDFLoader('pact-methodology-v3.0.pdf').load()
+    # print("PDF content loaded and converted to Document format.")
+    return docs
 
-# Função para carregar um PDF e retornar como lista de documentos
-def ler_txt_e_retorna_texto_em_document():
-    print(f">>> REALIZANDO A LEITURA DO PDF EXEMPLO")
-    lista_documentos = PyPDFLoader('FAQ_BOOKING_COM.pdf').load()
-    print("Texto lido e convertido em Document")
-    print(lista_documentos)
-    print("-----------------------------------")
-    return lista_documentos
-
-
-# Conecta-se ao banco vetorial já existente
-def conecta_banco_vetorial_pre_criado():
-    server = QdrantVectorStore.from_existing_collection(
+# Connects to an existing vector database
+def connect_to_existing_vector_store():
+    return QdrantVectorStore.from_existing_collection(
         collection_name="pdf_file",
         url=os.environ.get("QDRANT_URL"),
         embedding=embeddings_model,
         api_key=os.environ.get("QDRANT_API_KEY")
     )
-    return server
 
-
-# Menu de opções
+# Main menu and state machine
 def menu():
     while True:
-        print("\nOpções:")
-        print("q -> Sair")
-        print("1 -> Indexar informações no banco")
-        print("2 -> Apenas conectar ao banco existente")
-        opcao = input("Escolha uma opção: ").strip().lower()
+        print("\nOptions:")
+        print("q -> Quit")
+        print("1 -> Index documents into the vector store")
+        print("2 -> Connect to existing vector store and ask a question")
+        choice = input("Choose an option: ").strip().lower()
 
-        if opcao == 'q':
-            print("Saindo do programa...")
+        if choice == 'q':
+            print("Exiting program...")
             break
 
-        elif opcao == '1':
-            texto_completo_lido = ler_txt_e_retorna_texto_em_document()
-            divide_texto_resultado = divide_texto(texto_completo_lido)
-            cria_banco_vetorial_e_indexa_documentos(divide_texto_resultado)
-            print("Indexação concluída!")
+        elif choice == '1':
+            full_doc = load_pdf_as_documents()
+            split_chunks = split_document_into_chunks(full_doc)
+            create_and_index_vector_store(split_chunks)
+            print("Indexing completed.")
 
-        elif opcao == '2':
-            print("Conectando ao banco vetorial existente...")
-            db = conecta_banco_vetorial_pre_criado()
-            print("Conexão estabelecida com sucesso!")
+        elif choice == '2':
+            # print("Connecting to existing vector store...")
+            db = connect_to_existing_vector_store()
+            # print("Successfully connected!")
 
             class LineListOutputParser(BaseOutputParser[List[str]]):
-                """Output parser for a list of lines."""
                 def parse(self, text: str) -> List[str]:
                     lines = text.strip().split("\n")
-                    return list(filter(None, lines))  # Remove empty lines
+                    return list(filter(None, lines))
 
             output_parser = LineListOutputParser()
 
             QUERY_PROMPT = PromptTemplate(
                 input_variables=["question"],
-                template="""Você é um assistente de modelo de linguagem de IA. Sua tarefa é gerar cinco \
-            diferentes versões da pergunta do usuário para recuperar documentos relevantes de um vetor \
-            banco de dados. Ao gerar múltiplas perspectivas sobre a pergunta do usuário, seu objetivo é ajudar\
-            o usuário a superar algumas das limitações da busca por similaridade baseada em distância.
-            Forneça essas perguntas alternativas separadas por novas linhas.
-            Pergunta original: {question}"""
+                template="""Generate five different reformulations of the following user question \
+to retrieve relevant documents from a vector database. Use synonyms, paraphrasing, and different perspectives.
+
+Question: {question}"""
             )
 
             db_retriever = db.as_retriever()
             llm_chain = QUERY_PROMPT | llm | output_parser
             retriever = MultiQueryRetriever(retriever=db_retriever, llm_chain=llm_chain, parser_key="lines")
 
-            query = "Quando eu chego na hospedagem preciso pagar algo?"
-            pedacos_retornados = retriever.invoke(query)
+            query = "What are the existing standards protocols?"
+            retrieved_docs = retriever.invoke(query)
 
-            print(f"Total de pedaços retornados (documents): {len(pedacos_retornados)}\n")
+            # print(f"Total retrieved chunks: {len(retrieved_docs)}")
 
-            for i, pedaco in enumerate(pedacos_retornados):
-                print(f"------ (documents) chunk {i} -------")
-                print(pedaco.page_content)
-                print("-------------------------------------")
+            # Generate final answer
+            context = "\n\n".join([doc.page_content for doc in retrieved_docs])
+            final_prompt = f"""Based on the following extracted content from a technical document, answer the question clearly and concisely:
+
+Question: {query}
+
+Content:
+{context}
+
+Answer:"""
+
+            final_answer = llm.invoke(final_prompt)
+
+            print("\n=== FINAL ANSWER ===")
+            print(final_answer.content)
 
         else:
-            print("Opção inválida. Tente novamente.")
+            print("Invalid option. Please try again.")
 
-
-# Executa o menu
+# Run the menu
 menu()
