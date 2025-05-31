@@ -116,7 +116,7 @@ def menu():
             QUERY_PROMPT = PromptTemplate(
                 input_variables=["question"],
                 template="""Generate five different reformulations of the following user question \
-to retrieve relevant documents from a vector database. Use synonyms, paraphrasing, and different perspectives.
+            to retrieve relevant documents from a vector database. Use synonyms, paraphrasing, and different perspectives.
 
 Question: {question}"""
             )
