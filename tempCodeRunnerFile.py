@@ -1,1 +1,1 @@
-embeddings_model
+fitz

@@ -14,8 +14,13 @@ from langchain_qdrant import QdrantVectorStore
 from langchain_core.output_parsers import BaseOutputParser
 from langchain_core.prompts import PromptTemplate
 from langchain.retrievers.multi_query import MultiQueryRetriever
+from langchain_core.documents import Document
 
-
+import re
+import fitz
+from PIL import Image
+import io
+import base64
 # -----------------------
 # Configurações iniciais
 # -----------------------
@@ -77,7 +82,57 @@ def ler_txt_e_retorna_texto_em_document():
     print("-----------------------------------")
     return lista_documentos
 
+def identificar_imagem():
+        """Identifica a página que tem uma imagem para chamar a função de transcrição depois."""
+        paginas_com_imagem = []
 
+        doc_aberto = fitz.open(caminho_documento)
+
+        for page_num, page in enumerate(doc_aberto):
+            page_text = page.get_text("text")
+            # Identifica páginas que contêm figuras baseando-se na presença de legenda: "Figura X - ..."
+            if re.search(r'Figura \d+', page_text):
+                if page_num not in paginas_com_imagem:
+                    paginas_com_imagem.append(page_num)
+                    print(f"** Página {page_num+1} contém uma imagem!")
+
+        return paginas_com_imagem
+
+def gera_transcricao_imagem(pagina_com_imagem):
+        """ Função que gera a transcrição da imagem usando modelo multimodal e retorna um Document com a descrição
+        da imagem."""
+        doc_aberto = fitz.open(caminho_documento)
+        page = doc_aberto.load_page(pagina_com_imagem)
+        pix = page.get_pixmap()
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+
+        buffer = io.BytesIO()
+        img.save(buffer, format="PNG")
+        # Se quiser ver a imagem:
+        # img.show()
+
+        # Criar uma instância do modelo Multimodal:
+        llm_multimodal = ChatOpenAI(model="gpt-4o-mini", temperature=0.3)
+
+        prompt_de_transcricao = """Você é um especialista em criar transcrição fiel da imagem. Comente todos os detalhes. \
+        Descreva valores e cores quando tiver. Inclua o que a imagem quer apresentar.
+        Ignore o texto da página, foque na região que contem a imagem. Comentando todos os detalhes como se tivesse explicando \
+        para uma pessoa cega. Indique também a numeração da imagem que está na legenda."""
+
+        # Cria uma mensagem para ser enviada ao LLM. No caso de imagens é um pouco diferente!
+        message = HumanMessage(
+            content=[
+                {"type": "text", "text": prompt_de_transcricao},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{base64.b64encode(buffer.getvalue()).decode('utf-8')}"},
+                },
+            ],
+        )
+        response = llm_multimodal.invoke([message])
+
+        return Document(page_content=response.content, metadata={"source": "./DENGUE.pdf", "page": pagina_com_imagem})
+        
 # Conecta-se ao banco vetorial já existente
 def conecta_banco_vetorial_pre_criado():
     server = QdrantVectorStore.from_existing_collection(
@@ -105,7 +160,16 @@ def menu():
         elif opcao == '1':
             texto_completo_lido = ler_txt_e_retorna_texto_em_document()
             divide_texto_resultado = divide_texto(texto_completo_lido)
-            cria_banco_vetorial_e_indexa_documentos(divide_texto_resultado)
+
+            doc_descr_imagem = []
+
+            lista_pg_imagem = identificar_imagem()
+            for pagina in lista_pg_imagem:
+                doc_descr_imagem.append(gera_transcricao_imagem(pagina))
+
+            todos_documentos = doc_descr_imagem + divide_texto_resultado
+
+            cria_banco_vetorial_e_indexa_documentos(todos_documentos)
             print("Indexação concluída!")
 
         elif opcao == '2':
