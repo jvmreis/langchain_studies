@@ -21,8 +21,8 @@ from langchain.retrievers.multi_query import MultiQueryRetriever
 # -----------------------
 load_dotenv()
 
-api_key = os.getenv("OPENAI_API_KEY")  # Ainda usado para LLM se quiser
-debug = os.getenv("DEBUG")
+api_key = os.getenv("OPENAI_API_KEY");  # Ainda usado para LLM se quiser
+debug = os.getenv("DEBUG");
 
 print(f"API Key: {api_key}")
 print(f"Debug mode: {debug}")
@@ -39,20 +39,20 @@ llm = ChatOpenAI(
 # -------------------------------
 # Embeddings locais com HuggingFace
 # -------------------------------
-embeddings_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
+embeddings_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2");
 
 
 # Função: Divide o documento em partes menores (chunks)
 def divide_texto(lista_documento_entrada):
     print(f">>> REALIZANDO A DIVISAO DO TEXTO ORIGINAL EM CHUNKS")
-    text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
-    documents = text_splitter.split_documents(lista_documento_entrada)
+    text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0);
+    documents = text_splitter.split_documents(lista_documento_entrada);
     for i, pedaco in enumerate(documents):
         print("--" * 30)
         print(f"Chunk: {i}")
         print(pedaco)
         print("--" * 30)
-    return documents
+    return documents;
 
 
 # Cria o banco de dados vetorial, gerando os embeddings dos documentos
@@ -71,11 +71,11 @@ def cria_banco_vetorial_e_indexa_documentos(documentos):
 # Função para carregar um PDF e retornar como lista de documentos
 def ler_txt_e_retorna_texto_em_document():
     print(f">>> REALIZANDO A LEITURA DO PDF EXEMPLO")
-    lista_documentos = PyPDFLoader('FAQ_BOOKING_COM.pdf').load()
+    lista_documentos = PyPDFLoader('pact-methodology-v3.0.pdf').load()
     print("Texto lido e convertido em Document")
     print(lista_documentos)
     print("-----------------------------------")
-    return lista_documentos
+    return lista_documentos;
 
 
 # Conecta-se ao banco vetorial já existente
@@ -90,53 +90,42 @@ def conecta_banco_vetorial_pre_criado():
 
 
 # Menu de opções
+# ... [imports e configurações anteriores] ...
+
+# Menu de opções
 def menu():
     while True:
         print("\nOpções:")
         print("q -> Sair")
         print("1 -> Indexar informações no banco")
         print("2 -> Apenas conectar ao banco existente")
-        opcao = input("Escolha uma opção: ").strip().lower()
+        opcao = input("Escolha uma opção: ").strip().lower();
 
         if opcao == 'q':
             print("Saindo do programa...")
             break
 
         elif opcao == '1':
-            texto_completo_lido = ler_txt_e_retorna_texto_em_document()
-            divide_texto_resultado = divide_texto(texto_completo_lido)
-            cria_banco_vetorial_e_indexa_documentos(divide_texto_resultado)
+            texto_completo_lido = ler_txt_e_retorna_texto_em_document();
+            divide_texto_resultado = divide_texto(texto_completo_lido);
+            cria_banco_vetorial_e_indexa_documentos(divide_texto_resultado);
             print("Indexação concluída!")
 
         elif opcao == '2':
             print("Conectando ao banco vetorial existente...")
-            db = conecta_banco_vetorial_pre_criado()
+            db = conecta_banco_vetorial_pre_criado();
             print("Conexão estabelecida com sucesso!")
 
-            class LineListOutputParser(BaseOutputParser[List[str]]):
-                """Output parser for a list of lines."""
-                def parse(self, text: str) -> List[str]:
-                    lines = text.strip().split("\n")
-                    return list(filter(None, lines))  # Remove empty lines
+            # Cria o banco vetorial como recuperador:
+            db_retriever = db.as_retriever();
 
-            output_parser = LineListOutputParser()
+            # A chain intermediária por padrão sem personalização vai criar 3 frases semelhantes à entrada passada antes de
+            # fazer o retrivever:
+            retriever_from_llm = MultiQueryRetriever.from_llm(retriever=db_retriever, llm=llm);
 
-            QUERY_PROMPT = PromptTemplate(
-                input_variables=["question"],
-                template="""Você é um assistente de modelo de linguagem de IA. Sua tarefa é gerar cinco \
-            diferentes versões da pergunta do usuário para recuperar documentos relevantes de um vetor \
-            banco de dados. Ao gerar múltiplas perspectivas sobre a pergunta do usuário, seu objetivo é ajudar\
-            o usuário a superar algumas das limitações da busca por similaridade baseada em distância.
-            Forneça essas perguntas alternativas separadas por novas linhas.
-            Pergunta original: {question}"""
-            )
-
-            db_retriever = db.as_retriever()
-            llm_chain = QUERY_PROMPT | llm | output_parser
-            retriever = MultiQueryRetriever(retriever=db_retriever, llm_chain=llm_chain, parser_key="lines")
-
-            query = "Quando eu chego na hospedagem preciso pagar algo?"
-            pedacos_retornados = retriever.invoke(query)
+            # Exemplo de consulta
+            query = "what is the topic 2.1";
+            pedacos_retornados = retriever_from_llm.invoke(query);
 
             print(f"Total de pedaços retornados (documents): {len(pedacos_retornados)}\n")
 
@@ -147,6 +136,7 @@ def menu():
 
         else:
             print("Opção inválida. Tente novamente.")
+
 
 
 # Executa o menu
